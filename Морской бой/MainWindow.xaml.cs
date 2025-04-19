@@ -6,6 +6,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Diagnostics;
+using System.Threading.Tasks;
 
 namespace Морской_бой
 {
@@ -29,12 +30,16 @@ namespace Морской_бой
         private void InitializeGrid(UniformGrid grid, bool isPlayerGrid)
         {
             grid.Children.Clear();
-            for (int i = 0; i < 10; i++)
+            grid.Rows = 10;
+            grid.Columns = 10;
+
+            for (int y = 0; y < 10; y++) // строки
             {
-                for (int j = 0; j < 10; j++)
+                for (int x = 0; x < 10; x++) // столбцы
                 {
                     Button cell = new Button();
-                    cell.Tag = new Point(i, j);
+                    // Важно: сохраняем координаты как (X,Y)
+                    cell.Tag = new Point(x, y);
 
                     if (isPlayerGrid)
                         cell.Click += PlayerCell_Click;
@@ -134,7 +139,9 @@ namespace Морской_бой
 
                 if (grid == PlayerGrid)
                 {
-                    Button cell = grid.Children[placeY * 10 + placeX] as Button;
+                    // Правильное преобразование координат в индекс
+                    int index = placeY * 10 + placeX;
+                    Button cell = grid.Children[index] as Button;
                     cell.Background = Brushes.Gray;
                 }
             }
@@ -210,59 +217,78 @@ namespace Морской_бой
 
                     if (attempts > 100)
                     {
-                        // Поиск первой доступной клетки
+                        // Поиск оставшихся кораблей
                         for (x = 0; x < 10; x++)
                         {
                             for (y = 0; y < 10; y++)
                             {
-                                if (playerShips[x, y] == 1) // Ищем непотопленные корабли
+                                if (playerShips[x, y] == 1) // Ищем неповрежденные части кораблей
+                                {
                                     goto FoundCell;
+                                }
                             }
                         }
                         UpdateStatus("Компьютер не может найти клетку для выстрела");
                         isPlayerTurn = true;
                         return;
                     }
-                } while (playerShips[x, y] == 2 || playerShips[x, y] == 3);
+                } while (playerShips[x, y] >= 2); // Пропускаем уже атакованные клетки (2 - попадание, 3 - промах)
 
             FoundCell:
                 Button cell = PlayerGrid.Children[y * 10 + x] as Button;
                 if (cell == null) return;
 
-                if (playerShips[x, y] == 1)
+                if (playerShips[x, y] == 1) // Попадание в корабль
                 {
                     cell.Background = Brushes.Red;
                     cell.Content = "X";
-                    playerShips[x, y] = 2;
+                    playerShips[x, y] = 2; // Помечаем как подбитую часть
+
+                    Debug.WriteLine($"Компьютер попал в {x},{y}");
+                    UpdateStatus("Компьютер попал!");
 
                     if (IsShipSunk(playerShips, x, y))
                     {
-                        MarkSunkenShip(PlayerGrid, playerShips, x, y);
-                        playerShipsRemaining--; // Уменьшаем только когда корабль полностью потоплен
-                        UpdateStatus($"Компьютер потопил ваш корабль! Осталось кораблей: {playerShipsRemaining}");
+                        // Добавляем небольшую задержку для лучшей видимости сообщения
+                        Task.Delay(500).ContinueWith(_ =>
+                        {
+                            Dispatcher.Invoke(() =>
+                            {
+                                MarkSunkenShip(PlayerGrid, playerShips, x, y);
+                                playerShipsRemaining--;
+                                UpdateStatus($"Компьютер потопил ваш корабль! Осталось: {playerShipsRemaining}");
+
+                                if (playerShipsRemaining == 0)
+                                {
+                                    GameOver(false);
+                                    return;
+                                }
+                                isPlayerTurn = true;
+                            });
+                        });
                     }
                     else
                     {
-                        UpdateStatus($"Компьютер попал в ваш корабль! Его ход продолжается. Осталось кораблей: {playerShipsRemaining}");
-                        ComputerTurn(); // Компьютер стреляет снова
+                        // Добавляем задержку перед повторным выстрелом
+                        Task.Delay(1000).ContinueWith(_ =>
+                        {
+                            Dispatcher.Invoke(() =>
+                            {
+                                UpdateStatus("Компьютер попал в ваш корабль! Он стреляет снова.");
+                                ComputerTurn(); // Повторный выстрел
+                            });
+                        });
                         return;
                     }
                 }
-                else
+                else // Промах
                 {
                     cell.Background = Brushes.LightBlue;
                     cell.Content = "•";
-                    UpdateStatus("Компьютер промахнулся! Ваш ход.");
                     playerShips[x, y] = 3;
+                    UpdateStatus("Компьютер промахнулся! Ваш ход.");
+                    isPlayerTurn = true;
                 }
-
-                if (playerShipsRemaining == 0)
-                {
-                    GameOver(false);
-                    return;
-                }
-
-                isPlayerTurn = true;
             }
             catch (Exception ex)
             {
@@ -278,7 +304,7 @@ namespace Морской_бой
 
             foreach (Point p in shipCells)
             {
-                if (ships[(int)p.X, (int)p.Y] != 2)
+                if (ships[(int)p.X, (int)p.Y] != 2) // Все клетки должны быть подбиты
                     return false;
             }
             return true;
@@ -287,11 +313,12 @@ namespace Морской_бой
         private void FindShipCells(int[,] ships, int x, int y, List<Point> shipCells)
         {
             if (x < 0 || x >= 10 || y < 0 || y >= 10) return;
-            if (ships[x, y] == 0 || ships[x, y] == 3) return;
+            if (ships[x, y] == 0 || ships[x, y] == 3) return; // 0 - пусто, 3 - промах
             if (shipCells.Contains(new Point(x, y))) return;
 
             shipCells.Add(new Point(x, y));
 
+            // Проверяем только соседние клетки (не диагонали)
             FindShipCells(ships, x + 1, y, shipCells);
             FindShipCells(ships, x - 1, y, shipCells);
             FindShipCells(ships, x, y + 1, shipCells);
@@ -304,25 +331,12 @@ namespace Морской_бой
             List<Point> shipCells = new List<Point>();
             FindShipCells(ships, x, y, shipCells);
 
-            // 2. Помечаем все клетки корабля как потопленные
-            foreach (Point shipCell in shipCells)
-            {
-                int sx = (int)shipCell.X;
-                int sy = (int)shipCell.Y;
-
-                Button cell = grid.Children[sy * 10 + sx] as Button;
-                if (cell != null)
-                {
-                    cell.Background = Brushes.Red;
-                    cell.Content = "X";
-                    cell.IsEnabled = false;
-                }
-            }
-
-            // 3. Помечаем все соседние клетки вокруг корабля
+            // 2. Собираем все соседние клетки вокруг всего корабля
             HashSet<Point> surroundingCells = new HashSet<Point>();
+
             foreach (Point shipCell in shipCells)
             {
+                // Проверяем всех 8 соседей для каждой клетки корабля
                 for (int dx = -1; dx <= 1; dx++)
                 {
                     for (int dy = -1; dy <= 1; dy++)
@@ -332,6 +346,7 @@ namespace Морской_бой
                         int nx = (int)shipCell.X + dx;
                         int ny = (int)shipCell.Y + dy;
 
+                        // Если клетка в пределах поля и ПУСТАЯ (0)
                         if (nx >= 0 && nx < 10 && ny >= 0 && ny < 10 && ships[nx, ny] == 0)
                         {
                             surroundingCells.Add(new Point(nx, ny));
@@ -340,15 +355,31 @@ namespace Морской_бой
                 }
             }
 
-            // 4. Применяем изменения к соседним клеткам
-            foreach (Point surroundCell in surroundingCells)
+            // 3. Помечаем клетки корабля на поле
+            foreach (Point p in shipCells)
             {
-                int cx = (int)surroundCell.X;
-                int cy = (int)surroundCell.Y;
+                int px = (int)p.X;
+                int py = (int)p.Y;
 
-                ships[cx, cy] = 3; // Помечаем как ограждение
+                Button cell = grid.Children[py * 10 + px] as Button;
+                if (cell != null)
+                {
+                    cell.Background = Brushes.Red;
+                    cell.Content = "X";
+                    cell.IsEnabled = false;
+                    ships[px, py] = 2; // Помечаем как подбитую часть
+                }
+            }
 
-                Button cell = grid.Children[cy * 10 + cx] as Button;
+            // 4. Помечаем клетки ВОКРУГ корабля
+            foreach (Point p in surroundingCells)
+            {
+                int px = (int)p.X;
+                int py = (int)p.Y;
+
+                ships[px, py] = 3; // Помечаем как "блокированную"
+
+                Button cell = grid.Children[py * 10 + px] as Button;
                 if (cell != null && cell.Background != Brushes.Blue)
                 {
                     cell.Background = Brushes.LightBlue;
@@ -375,19 +406,54 @@ namespace Морской_бой
         {
             Button cell = sender as Button;
             Point position = (Point)cell.Tag;
-            int x = (int)position.X;
-            int y = (int)position.Y;
+            int x = (int)position.X; // Столбец (0-9)
+            int y = (int)position.Y; // Строка (0-9)
 
+            // Проверяем границы массива
+            if (x < 0 || x >= 10 || y < 0 || y >= 10) return;
+
+            // Если клетка пустая - пробуем поставить корабль
             if (playerShips[x, y] == 0)
             {
-                playerShips[x, y] = 1;
-                cell.Background = Brushes.Gray;
+                // Временная проверка размещения
+                if (CanPlaceSingleCell(x, y))
+                {
+                    playerShips[x, y] = 1;
+                    cell.Background = Brushes.Gray;
+                }
+                else
+                {
+                    MessageBox.Show("Нельзя размещать корабли рядом друг с другом!");
+                }
             }
-            else
+            else // Если клетка занята - очищаем
             {
                 playerShips[x, y] = 0;
                 cell.Background = Brushes.White;
             }
+        }
+
+        private bool CanPlaceSingleCell(int x, int y)
+        {
+            // Проверяем саму клетку
+            if (playerShips[x, y] != 0) return false;
+
+            // Проверяем соседей (8-связность)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    int nx = x + dx;
+                    int ny = y + dy;
+
+                    if (nx >= 0 && nx < 10 && ny >= 0 && ny < 10)
+                    {
+                        if (playerShips[nx, ny] != 0)
+                            return false;
+                    }
+                }
+            }
+            return true;
         }
 
         private void StartGame_Click(object sender, RoutedEventArgs e)
