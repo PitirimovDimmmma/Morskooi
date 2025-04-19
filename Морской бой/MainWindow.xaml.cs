@@ -140,6 +140,7 @@ namespace Морской_бой
             }
         }
 
+
         private void EnemyCell_Click(object sender, RoutedEventArgs e)
         {
             if (!isPlayerTurn) return;
@@ -151,41 +152,43 @@ namespace Морской_бой
             int x = (int)position.X;
             int y = (int)position.Y;
 
-            if (cell.Background == Brushes.Red || cell.Background == Brushes.Blue)
+            // Проверяем, не стреляли ли уже в эту клетку
+            if (cell.Background == Brushes.Red || cell.Background == Brushes.Blue || cell.Background == Brushes.LightBlue)
             {
                 UpdateStatus("Вы уже стреляли в эту клетку!");
                 return;
             }
 
-            if (enemyShips[x, y] == 1)
+            if (enemyShips[x, y] == 1) // Попадание в корабль
             {
                 cell.Background = Brushes.Red;
                 cell.Content = "X";
-                enemyShips[x, y] = 2;
+                enemyShips[x, y] = 2; // Помечаем как подбитую часть корабля
 
                 if (IsShipSunk(enemyShips, x, y))
                 {
                     MarkSunkenShip(EnemyGrid, enemyShips, x, y);
-                    enemyShipsRemaining--; // Уменьшаем только когда корабль полностью потоплен
+                    enemyShipsRemaining--;
                     UpdateStatus($"Вы потопили корабль! Осталось кораблей: {enemyShipsRemaining}");
+
+                    if (enemyShipsRemaining == 0)
+                    {
+                        GameOver(true);
+                        return;
+                    }
                 }
                 else
                 {
                     UpdateStatus($"Вы попали! Стреляйте еще раз. Осталось кораблей: {enemyShipsRemaining}");
-                    return; // Позволяем игроку стрелять снова
+                    return;
                 }
             }
-            else
+            else // Промах
             {
                 cell.Background = Brushes.Blue;
                 cell.Content = "•";
+                enemyShips[x, y] = 3; // Помечаем как промах
                 UpdateStatus("Промах! Ход противника.");
-            }
-
-            if (enemyShipsRemaining == 0)
-            {
-                GameOver(true);
-                return;
             }
 
             isPlayerTurn = false;
@@ -297,32 +300,60 @@ namespace Морской_бой
 
         private void MarkSunkenShip(UniformGrid grid, int[,] ships, int x, int y)
         {
+            // 1. Находим все клетки потопленного корабля
             List<Point> shipCells = new List<Point>();
             FindShipCells(ships, x, y, shipCells);
 
-            foreach (Point p in shipCells)
+            // 2. Помечаем все клетки корабля как потопленные
+            foreach (Point shipCell in shipCells)
             {
-                for (int i = -1; i <= 1; i++)
-                {
-                    for (int j = -1; j <= 1; j++)
-                    {
-                        int checkX = (int)p.X + i;
-                        int checkY = (int)p.Y + j;
+                int sx = (int)shipCell.X;
+                int sy = (int)shipCell.Y;
 
-                        if (checkX >= 0 && checkX < 10 && checkY >= 0 && checkY < 10)
+                Button cell = grid.Children[sy * 10 + sx] as Button;
+                if (cell != null)
+                {
+                    cell.Background = Brushes.Red;
+                    cell.Content = "X";
+                    cell.IsEnabled = false;
+                }
+            }
+
+            // 3. Помечаем все соседние клетки вокруг корабля
+            HashSet<Point> surroundingCells = new HashSet<Point>();
+            foreach (Point shipCell in shipCells)
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        if (dx == 0 && dy == 0) continue; // Пропускаем саму клетку корабля
+
+                        int nx = (int)shipCell.X + dx;
+                        int ny = (int)shipCell.Y + dy;
+
+                        if (nx >= 0 && nx < 10 && ny >= 0 && ny < 10 && ships[nx, ny] == 0)
                         {
-                            if (ships[checkX, checkY] == 0)
-                            {
-                                ships[checkX, checkY] = 3;
-                                Button cell = grid.Children[checkY * 10 + checkX] as Button;
-                                if (cell != null)
-                                {
-                                    cell.Background = Brushes.LightBlue;
-                                    cell.Content = "•";
-                                }
-                            }
+                            surroundingCells.Add(new Point(nx, ny));
                         }
                     }
+                }
+            }
+
+            // 4. Применяем изменения к соседним клеткам
+            foreach (Point surroundCell in surroundingCells)
+            {
+                int cx = (int)surroundCell.X;
+                int cy = (int)surroundCell.Y;
+
+                ships[cx, cy] = 3; // Помечаем как ограждение
+
+                Button cell = grid.Children[cy * 10 + cx] as Button;
+                if (cell != null && cell.Background != Brushes.Blue)
+                {
+                    cell.Background = Brushes.LightBlue;
+                    cell.Content = "•";
+                    cell.IsEnabled = false;
                 }
             }
         }
