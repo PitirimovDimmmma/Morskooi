@@ -363,5 +363,39 @@ namespace Морской_бой
         {
             StartNewGame();
         }
+        private void RulesButton_Click(object sender, RoutedEventArgs e)
+        {
+            Window rulesWindow = new Window
+            {
+                Title = "Правила игры Морской бой",
+                Width = 400,
+                Height = 300,
+                WindowStartupLocation = WindowStartupLocation.Manual,
+                Left = this.Left + 20,
+                Top = this.Top + 20,
+                ResizeMode = ResizeMode.NoResize
+            };
+
+            TextBlock rulesText = new TextBlock
+            {
+                Text = "Правила игры:\n\n" +
+                       "1. Каждый игрок имеет 10 кораблей:\n" +
+                       "   - 1 корабль на 4 клетки\n" +
+                       "   - 2 корабля на 3 клетки\n" +
+                       "   - 3 корабля на 2 клетки\n" +
+                       "   - 4 корабля на 1 клетку\n\n" +
+                       "2. Корабли не могут касаться друг друга\n" +
+                       "3. Игроки по очереди стреляют по клеткам\n" +
+                       "4. Попадание дает право на дополнительный выстрел\n" +
+                       "5. Побеждает тот, кто первым потопит все корабли противника",
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(10),
+                FontSize = 14
+            };
+
+            rulesWindow.Content = rulesText;
+            rulesWindow.Show();
+        }
+
     }
 }
